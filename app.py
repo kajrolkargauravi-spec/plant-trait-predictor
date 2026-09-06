@@ -105,11 +105,12 @@ def load_model_artifacts():
 
 
 @st.cache_resource
-def load_optional(name, loader):
-    """Load an optional artifact; return None if missing instead of crashing the app."""
+def load_optional(name, _loader):
+    """Load an optional artifact; return None if missing instead of crashing the app.
+    The leading underscore on _loader tells Streamlit not to try to hash a function object."""
     path = artifact_path(name)
     if os.path.exists(path):
-        return loader(path)
+        return _loader(path)
     return None
 
 
