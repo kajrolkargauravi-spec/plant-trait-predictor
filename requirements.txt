@@ -1,9 +1,10 @@
 streamlit
-tensorflow
+tensorflow==2.15.0
 numpy
 pandas
 scikit-learn
 joblib
-pillow
-matplotlib
+Pillow
+plotly
 shap
+opencv-python-headless
