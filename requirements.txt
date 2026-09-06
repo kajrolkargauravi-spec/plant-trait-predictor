@@ -1,9 +1,8 @@
-app.py
-multimodal_model.keras
-env_cols.pkl
-env_medians.pkl
-env_scaler.pkl
-selected_env_cols.pkl
-target_scaler.pkl
-requirements.txt
-runtime.txt
+streamlit
+tensorflow==2.16.1
+numpy==1.26.4
+pandas
+scikit-learn
+joblib
+pillow
+plotly
