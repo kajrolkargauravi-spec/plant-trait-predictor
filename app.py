@@ -1,4 +1,3 @@
-```python
 import os
 import warnings
 
@@ -9,25 +8,23 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 
 from PIL import Image
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE SETUP
 # ============================================================
 
 st.set_page_config(
     page_title="Plant Functional Trait Predictor",
     page_icon="🌿",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 
 # ============================================================
-# FILE PATHS
+# FILES
 # ============================================================
 
 MODEL_PATH = "multimodal_model.keras"
@@ -39,30 +36,23 @@ TARGET_SCALER_PATH = "target_scaler.pkl"
 
 
 # ============================================================
-# TARGET INFORMATION
+# MODEL OUTPUTS
 # ============================================================
+# We know the model produces 6 numerical outputs.
+# We will verify the biological names later.
 
 TARGETS = [
-    "X4_mean",
-    "X11_mean",
-    "X18_mean",
-    "X26_mean",
-    "X50_mean",
-    "X3112_mean"
+    "Trait 1",
+    "Trait 2",
+    "Trait 3",
+    "Trait 4",
+    "Trait 5",
+    "Trait 6"
 ]
-
-TRAIT_NAMES = {
-    "X4_mean": "Stem Specific Density",
-    "X11_mean": "Specific Leaf Area",
-    "X18_mean": "Plant Height",
-    "X26_mean": "Seed Dry Mass",
-    "X50_mean": "Leaf Nitrogen per Area",
-    "X3112_mean": "Leaf Area"
-}
 
 
 # ============================================================
-# CSS
+# PAGE STYLE
 # ============================================================
 
 st.markdown(
@@ -72,7 +62,6 @@ st.markdown(
     .main-title {
         font-size: 42px;
         font-weight: 700;
-        margin-bottom: 5px;
     }
 
     .subtitle {
@@ -83,35 +72,22 @@ st.markdown(
 
     .trait-card {
         padding: 20px;
-        border-radius: 14px;
+        border-radius: 15px;
         border: 1px solid #dddddd;
         background-color: #fafafa;
         text-align: center;
-        min-height: 140px;
-    }
-
-    .trait-name {
-        font-size: 15px;
-        color: #666666;
-        margin-bottom: 10px;
-    }
-
-    .trait-value {
-        font-size: 28px;
-        font-weight: 700;
-    }
-
-    .section-box {
-        padding: 20px;
-        border-radius: 14px;
-        border: 1px solid #dddddd;
-        background-color: #fafafa;
         margin-bottom: 20px;
     }
 
-    .small-text {
+    .trait-name {
+        font-size: 16px;
         color: #666666;
-        font-size: 14px;
+    }
+
+    .trait-value {
+        font-size: 30px;
+        font-weight: 700;
+        margin-top: 10px;
     }
 
     </style>
@@ -121,11 +97,41 @@ st.markdown(
 
 
 # ============================================================
+# CHECK FILES
+# ============================================================
+
+required_files = [
+    MODEL_PATH,
+    ENV_COLS_PATH,
+    ENV_MEDIANS_PATH,
+    ENV_SCALER_PATH,
+    SELECTED_ENV_COLS_PATH,
+    TARGET_SCALER_PATH
+]
+
+missing_files = [
+    file for file in required_files
+    if not os.path.exists(file)
+]
+
+if missing_files:
+
+    st.error("Required model files are missing.")
+
+    st.write("Missing files:")
+
+    for file in missing_files:
+        st.write(f"• {file}")
+
+    st.stop()
+
+
+# ============================================================
 # LOAD MODEL
 # ============================================================
 
 @st.cache_resource
-def load_model_and_preprocessors():
+def load_everything():
 
     model = tf.keras.models.load_model(
         MODEL_PATH,
@@ -162,38 +168,6 @@ def load_model_and_preprocessors():
     )
 
 
-# ============================================================
-# CHECK REQUIRED FILES
-# ============================================================
-
-required_files = [
-    MODEL_PATH,
-    ENV_COLS_PATH,
-    ENV_MEDIANS_PATH,
-    ENV_SCALER_PATH,
-    SELECTED_ENV_COLS_PATH,
-    TARGET_SCALER_PATH
-]
-
-missing_files = [
-    f for f in required_files
-    if not os.path.exists(f)
-]
-
-if missing_files:
-
-    st.error("Some required model files are missing.")
-
-    for f in missing_files:
-        st.write(f"• `{f}`")
-
-    st.stop()
-
-
-# ============================================================
-# LOAD EVERYTHING
-# ============================================================
-
 try:
 
     (
@@ -203,35 +177,15 @@ try:
         env_scaler,
         selected_env_cols,
         target_scaler
-    ) = load_model_and_preprocessors()
+    ) = load_everything()
 
-except Exception as e:
+except Exception as error:
 
-    st.error("The trained model could not be loaded.")
+    st.error("The model could not be loaded.")
 
-    st.exception(e)
+    st.exception(error)
 
     st.stop()
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-if "predictions" not in st.session_state:
-    st.session_state.predictions = None
-
-if "image" not in st.session_state:
-    st.session_state.image = None
-
-if "image_array" not in st.session_state:
-    st.session_state.image_array = None
-
-if "environment_array" not in st.session_state:
-    st.session_state.environment_array = None
-
-if "environment_original" not in st.session_state:
-    st.session_state.environment_original = None
 
 
 # ============================================================
@@ -273,61 +227,58 @@ def preprocess_environment(df):
 
     df = df.copy()
 
-    # --------------------------------------------------------
-    # Make sure every required feature exists.
-    # Missing variables are filled with training medians.
-    # --------------------------------------------------------
+    # Make sure all 163 required columns exist.
 
-    for col in env_cols:
+    for column in env_cols:
 
-        if col not in df.columns:
+        if column not in df.columns:
 
-            df[col] = env_medians.get(
-                col,
-                0.0
-            )
+            if isinstance(env_medians, dict):
 
-    # --------------------------------------------------------
-    # Keep the exact training feature order.
-    # --------------------------------------------------------
+                df[column] = env_medians.get(
+                    column,
+                    0.0
+                )
+
+            else:
+
+                df[column] = 0.0
+
+    # Use exactly the same order as training.
 
     df = df[env_cols]
 
-    # --------------------------------------------------------
-    # Convert to numerical values.
-    # --------------------------------------------------------
+    # Convert values to numbers.
 
     df = df.apply(
         pd.to_numeric,
         errors="coerce"
     )
 
-    # --------------------------------------------------------
     # Fill missing values.
-    # --------------------------------------------------------
 
-    for col in env_cols:
+    for column in env_cols:
 
-        median_value = env_medians.get(
-            col,
-            0.0
+        if isinstance(env_medians, dict):
+
+            median = env_medians.get(
+                column,
+                0.0
+            )
+
+        else:
+
+            median = 0.0
+
+        df[column] = df[column].fillna(
+            median
         )
-
-        df[col] = df[col].fillna(
-            median_value
-        )
-
-    # --------------------------------------------------------
-    # Convert to NumPy.
-    # --------------------------------------------------------
 
     values = df.values.astype(
         np.float32
     )
 
-    # --------------------------------------------------------
-    # Apply the SAME StandardScaler used during training.
-    # --------------------------------------------------------
+    # Apply training scaler.
 
     values = env_scaler.transform(
         values
@@ -339,7 +290,7 @@ def preprocess_environment(df):
 
 
 # ============================================================
-# MODEL PREDICTION
+# PREDICTION
 # ============================================================
 
 def predict_traits(
@@ -355,10 +306,6 @@ def predict_traits(
         verbose=0
     )
 
-    prediction_scaled = np.asarray(
-        prediction_scaled
-    )
-
     prediction = target_scaler.inverse_transform(
         prediction_scaled
     )
@@ -367,35 +314,25 @@ def predict_traits(
 
 
 # ============================================================
-# NUMBER FORMATTER
-# ============================================================
-
-def format_value(value):
-
-    if not np.isfinite(value):
-        return "N/A"
-
-    return f"{value:,.4f}"
-
-
-# ============================================================
 # SIDEBAR
 # ============================================================
 
 st.sidebar.title("🌿 Plant Trait AI")
 
-st.sidebar.caption(
-    "Multimodal Deep Learning Research Demonstrator"
+st.sidebar.write(
+    "Multimodal Deep Learning"
 )
 
+st.sidebar.divider()
+
 page = st.sidebar.radio(
-    "Navigate",
+    "Select Page",
     [
-        "🏠 Research Overview",
+        "🏠 Home",
         "🌱 Predict Traits",
         "📊 Model Performance",
         "🔍 Explainability",
-        "🌍 Environmental Features",
+        "🌍 Environmental Data",
         "🧠 Model Architecture"
     ]
 )
@@ -403,23 +340,23 @@ page = st.sidebar.radio(
 st.sidebar.divider()
 
 st.sidebar.write(
-    f"**Environmental inputs:** {len(env_cols)}"
+    f"Environmental variables: {len(env_cols)}"
 )
 
 st.sidebar.write(
-    f"**Selected features:** {len(selected_env_cols)}"
+    f"Selected variables: {len(selected_env_cols)}"
 )
 
 st.sidebar.write(
-    "**Outputs:** 6 continuous traits"
+    "Outputs: 6 numerical traits"
 )
 
 
 # ============================================================
-# PAGE 1: RESEARCH OVERVIEW
+# HOME
 # ============================================================
 
-if page == "🏠 Research Overview":
+if page == "🏠 Home":
 
     st.markdown(
         '<div class="main-title">'
@@ -436,77 +373,54 @@ if page == "🏠 Research Overview":
         unsafe_allow_html=True
     )
 
-    st.markdown(
+    st.info(
         """
-        <div class="section-box">
-
-        <h3>Research Concept</h3>
-
-        This project investigates whether visual information
-        from plant images combined with environmental information
-        can be used to predict continuous plant functional traits.
-
-        The trained model receives two forms of information:
-
-        <br><br>
-
-        <b>Plant image</b><br>
-        A 224 × 224 RGB image.
-
-        <br><br>
-
-        <b>Environmental information</b><br>
-        163 climate, soil, satellite reflectance and vegetation
-        variables.
-
-        <br><br>
-
-        The multimodal model produces six numerical plant
-        functional trait predictions.
-
-        </div>
-        """,
-        unsafe_allow_html=True
+        This research uses a multimodal deep learning model
+        to predict continuous plant functional traits by
+        combining plant images with environmental information.
+        """
     )
 
-    st.subheader("Research Pipeline")
+    st.subheader("How the model works")
 
     st.code(
         """
         PLANT IMAGE
-             │
-             ▼
+             |
+             v
         IMAGE BRANCH
-             │
-             │
-             ├──────────────┐
-                            │
-                            ▼
-                         FUSION
-                            ▲
-                            │
-             ┌──────────────┘
-             │
+             |
+             v
+        IMAGE FEATURES
+             |
+             |
+             +------------+
+                          |
+                          v
+                       FUSION
+                          ^
+                          |
+             +------------+
+             |
         ENVIRONMENTAL DATA
-             │
-             ▼
+             |
+             v
         163 VARIABLES
-             │
-             ▼
-        PREPROCESSING
-             │
-             ▼
+             |
+             v
         ENVIRONMENT BRANCH
-             │
-             ▼
-        MULTIMODAL MODEL
-             │
-             ▼
-        MULTI-OUTPUT REGRESSION
-             │
-        ┌────┼────┬────┬────┬────┐
-        ▼    ▼    ▼    ▼    ▼    ▼
-       T1   T2   T3   T4   T5   T6
+             |
+             v
+        ENVIRONMENT FEATURES
+             |
+             v
+           FUSION
+             |
+             v
+        DEEP LEARNING MODEL
+             |
+             v
+        6 NUMERICAL OUTPUTS
         """,
         language="text"
     )
@@ -529,40 +443,41 @@ if page == "🏠 Research Overview":
 
     with c3:
         st.metric(
-            "Selected Features",
+            "Selected Variables",
             "15"
         )
 
     with c4:
         st.metric(
-            "Predicted Traits",
+            "Outputs",
             "6"
         )
 
-    st.subheader("Predicted Traits")
+    st.subheader("Research Focus")
 
-    for target in TARGETS:
+    st.write(
+        """
+        The objective is to investigate whether combining
+        visual plant information with environmental information
+        can provide useful predictions of continuous plant
+        functional traits.
+        """
+    )
 
-        st.write(
-            f"• **{TRAIT_NAMES[target]}**"
-        )
-
-    st.info(
-        "This is a multi-output regression problem. "
-        "The model predicts continuous numerical values, "
-        "not categorical classes."
+    st.success(
+        "Problem type: Multi-output regression"
     )
 
 
 # ============================================================
-# PAGE 2: PREDICTION
+# PREDICTION PAGE
 # ============================================================
 
 elif page == "🌱 Predict Traits":
 
     st.markdown(
         '<div class="main-title">'
-        '🌱 Predict Plant Functional Traits'
+        '🌱 Predict Plant Traits'
         '</div>',
         unsafe_allow_html=True
     )
@@ -574,10 +489,10 @@ elif page == "🌱 Predict Traits":
         unsafe_allow_html=True
     )
 
-    st.subheader("1. Upload Plant Image")
+    st.subheader("Step 1: Upload Plant Image")
 
     uploaded_image = st.file_uploader(
-        "Choose a JPG, JPEG or PNG image",
+        "Upload JPG, JPEG or PNG",
         type=[
             "jpg",
             "jpeg",
@@ -585,7 +500,6 @@ elif page == "🌱 Predict Traits":
         ]
     )
 
-    image = None
     image_array = None
 
     if uploaded_image is not None:
@@ -598,32 +512,24 @@ elif page == "🌱 Predict Traits":
 
             st.image(
                 image,
-                caption="Uploaded plant image",
+                caption="Uploaded Plant",
                 width=400
             )
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                "Could not process the image."
+                "Could not process image."
             )
 
-            st.exception(e)
+            st.exception(error)
 
     st.divider()
 
-    st.subheader("2. Upload Environmental Data")
-
-    st.write(
-        """
-        Upload a CSV containing environmental observations.
-        The application automatically places the variables in
-        the same order used during model training.
-        """
-    )
+    st.subheader("Step 2: Upload Environmental Data")
 
     uploaded_csv = st.file_uploader(
-        "Choose environmental CSV",
+        "Upload environmental CSV",
         type=["csv"]
     )
 
@@ -638,13 +544,13 @@ elif page == "🌱 Predict Traits":
             )
 
             st.success(
-                f"Environmental dataset loaded: "
+                f"CSV loaded: "
                 f"{environmental_data.shape[0]} rows × "
-                f"{environmental_data.shape[1]} columns."
+                f"{environmental_data.shape[1]} columns"
             )
 
             with st.expander(
-                "Preview uploaded data"
+                "View uploaded data"
             ):
 
                 st.dataframe(
@@ -652,47 +558,42 @@ elif page == "🌱 Predict Traits":
                     use_container_width=True
                 )
 
-            present = [
-                col for col in env_cols
-                if col in environmental_data.columns
+            available = [
+                column
+                for column in env_cols
+                if column in environmental_data.columns
             ]
 
             missing = [
-                col for col in env_cols
-                if col not in environmental_data.columns
+                column
+                for column in env_cols
+                if column not in environmental_data.columns
             ]
 
             st.write(
-                f"Required environmental variables found: "
-                f"**{len(present)} / {len(env_cols)}**"
+                f"Environmental variables found: "
+                f"**{len(available)} / {len(env_cols)}**"
             )
 
             if missing:
 
                 st.warning(
-                    f"{len(missing)} environmental variables "
-                    "are missing. The saved training medians "
-                    "will be used for those variables."
+                    f"{len(missing)} variables are missing. "
+                    "Training medians will be used."
                 )
 
-        except Exception as e:
+        except Exception as error:
 
             st.error(
-                "Could not read the environmental CSV."
+                "Could not read the CSV."
             )
 
-            st.exception(e)
-
-    else:
-
-        st.info(
-            "Upload a CSV to continue."
-        )
+            st.exception(error)
 
     st.divider()
 
     if st.button(
-        "🌿 Generate Predictions",
+        "🌿 Generate Prediction",
         type="primary",
         use_container_width=True
     ):
@@ -700,19 +601,19 @@ elif page == "🌱 Predict Traits":
         if image_array is None:
 
             st.warning(
-                "Please upload a plant image first."
+                "Please upload a plant image."
             )
 
         elif environmental_data is None:
 
             st.warning(
-                "Please upload an environmental CSV first."
+                "Please upload environmental data."
             )
 
-        elif len(environmental_data) == 0:
+        elif environmental_data.empty:
 
             st.warning(
-                "The environmental CSV contains no observations."
+                "The CSV contains no data."
             )
 
         else:
@@ -720,11 +621,11 @@ elif page == "🌱 Predict Traits":
             try:
 
                 with st.spinner(
-                    "Running multimodal deep learning model..."
+                    "Running deep learning model..."
                 ):
 
-                    # Currently the deployment predicts the
-                    # first environmental observation.
+                    # Use first environmental observation.
+
                     first_row = environmental_data.iloc[
                         [0]
                     ]
@@ -740,37 +641,31 @@ elif page == "🌱 Predict Traits":
                         environment_array
                     )
 
-                st.session_state.predictions = predictions
-
-                st.session_state.image = image
-
-                st.session_state.image_array = image_array
-
-                st.session_state.environment_array = (
-                    environment_array
-                )
-
-                st.session_state.environment_original = (
-                    first_row
-                )
+                st.session_state[
+                    "predictions"
+                ] = predictions
 
                 st.success(
-                    "Prediction completed successfully."
+                    "Prediction completed!"
                 )
 
-            except Exception as e:
+            except Exception as error:
 
                 st.error(
                     "Prediction failed."
                 )
 
-                st.exception(e)
+                st.exception(error)
 
     # --------------------------------------------------------
-    # RESULTS
+    # SHOW RESULTS
     # --------------------------------------------------------
 
-    if st.session_state.predictions is not None:
+    if "predictions" in st.session_state:
+
+        predictions = st.session_state[
+            "predictions"
+        ]
 
         st.divider()
 
@@ -778,13 +673,9 @@ elif page == "🌱 Predict Traits":
             "📈 Predicted Plant Functional Traits"
         )
 
-        predictions = (
-            st.session_state.predictions
-        )
-
         columns = st.columns(3)
 
-        for i, target in enumerate(TARGETS):
+        for i in range(6):
 
             with columns[i % 3]:
 
@@ -793,11 +684,11 @@ elif page == "🌱 Predict Traits":
                     <div class="trait-card">
 
                     <div class="trait-name">
-                    {TRAIT_NAMES[target]}
+                    {TARGETS[i]}
                     </div>
 
                     <div class="trait-value">
-                    {format_value(predictions[i])}
+                    {predictions[i]:.4f}
                     </div>
 
                     </div>
@@ -805,40 +696,34 @@ elif page == "🌱 Predict Traits":
                     unsafe_allow_html=True
                 )
 
-        st.write("")
-
-        st.info(
-            "The values above are continuous predictions "
-            "generated by the trained multimodal regression model. "
-            "Their scientific interpretation requires the trait "
-            "units and target metadata from the original dataset."
-        )
-
-        # ----------------------------------------------------
-        # Prediction chart
-        # ----------------------------------------------------
-
         st.subheader(
             "📊 Prediction Profile"
         )
 
-        chart_df = pd.DataFrame(
+        chart_data = pd.DataFrame(
             {
-                "Trait": [
-                    TRAIT_NAMES[t]
-                    for t in TARGETS
-                ],
-                "Predicted Value": predictions
+                "Trait": TARGETS,
+                "Prediction": predictions
             }
         )
 
         st.bar_chart(
-            chart_df.set_index("Trait")
+            chart_data.set_index(
+                "Trait"
+            )
+        )
+
+        st.info(
+            """
+            The model produces continuous numerical predictions.
+            The biological names and units of the six outputs will
+            be connected after verifying the original target data.
+            """
         )
 
 
 # ============================================================
-# PAGE 3: MODEL PERFORMANCE
+# MODEL PERFORMANCE
 # ============================================================
 
 elif page == "📊 Model Performance":
@@ -850,19 +735,11 @@ elif page == "📊 Model Performance":
         unsafe_allow_html=True
     )
 
-    st.markdown(
+    st.write(
         """
-        Model performance must be calculated using predictions
-        on an independent validation or test dataset.
-
-        Because this is a regression problem, conventional
-        classification accuracy is not the appropriate metric.
-        Recommended metrics include R², MAE and RMSE.
+        Because this is a regression model, performance should
+        be evaluated using R², MAE and RMSE.
         """
-    )
-
-    st.subheader(
-        "Recommended Evaluation Metrics"
     )
 
     c1, c2, c3 = st.columns(3)
@@ -871,128 +748,85 @@ elif page == "📊 Model Performance":
 
         st.metric(
             "R²",
-            "Validation required"
+            "Pending"
         )
 
         st.caption(
-            "Proportion of variance explained by the model."
+            "Variance explained by the model."
         )
 
     with c2:
 
         st.metric(
             "MAE",
-            "Validation required"
+            "Pending"
         )
 
         st.caption(
-            "Mean absolute prediction error."
+            "Mean Absolute Error."
         )
 
     with c3:
 
         st.metric(
             "RMSE",
-            "Validation required"
+            "Pending"
         )
 
         st.caption(
-            "Root mean squared prediction error."
+            "Root Mean Squared Error."
         )
 
     st.divider()
 
     st.subheader(
-        "Why is there no 'Prediction Percentage'?"
+        "Why not prediction accuracy %?"
     )
 
     st.write(
         """
-        A percentage such as "87% accuracy" is generally not
-        appropriate for this regression problem.
+        This is a numerical regression problem, not a
+        classification problem.
 
-        For example, an R² value of 0.87 means that approximately
-        87% of the variance in the target variable is explained
-        by the model on the evaluated dataset. It does NOT mean
-        that individual predictions are 87% correct.
+        Therefore, a statement such as "the model is 90%
+        accurate" would be misleading.
 
-        Therefore, the research interface should report R²,
-        MAE and RMSE rather than a misleading accuracy percentage.
+        We will instead calculate R², MAE and RMSE using
+        the independent test dataset.
         """
     )
 
     st.divider()
 
     st.subheader(
-        "📁 Add Validation Results"
+        "Research Evaluation"
     )
 
     st.write(
         """
-        When you have generated your validation predictions in
-        Google Colab, we can connect them here and automatically
-        display:
+        The final research version of this page will include:
 
-        • R² for each trait
+        • R² for each plant trait
 
-        • MAE for each trait
+        • MAE for each plant trait
 
-        • RMSE for each trait
+        • RMSE for each plant trait
 
-        • Actual vs predicted plots
+        • Actual vs Predicted plots
 
         • Residual plots
 
-        • Overall model comparison
+        • Comparison of performance across the six traits
         """
     )
 
-    validation_file = st.file_uploader(
-        "Upload validation_predictions.csv",
-        type=["csv"]
+    st.warning(
+        "Do not enter or display invented performance values."
     )
-
-    if validation_file is not None:
-
-        try:
-
-            validation_df = pd.read_csv(
-                validation_file
-            )
-
-            st.success(
-                "Validation file loaded."
-            )
-
-            st.dataframe(
-                validation_df.head(),
-                use_container_width=True
-            )
-
-            st.info(
-                "The exact column structure of your validation "
-                "file needs to be connected to the metric calculation "
-                "after we generate the validation results in Colab."
-            )
-
-        except Exception as e:
-
-            st.error(
-                "Could not read validation file."
-            )
-
-            st.exception(e)
-
-    else:
-
-        st.warning(
-            "No validation results have been uploaded yet. "
-            "Do not display invented performance values."
-        )
 
 
 # ============================================================
-# PAGE 4: EXPLAINABILITY
+# EXPLAINABILITY
 # ============================================================
 
 elif page == "🔍 Explainability":
@@ -1004,150 +838,107 @@ elif page == "🔍 Explainability":
         unsafe_allow_html=True
     )
 
-    st.markdown(
+    st.write(
         """
-        Explainability is included to investigate which
-        environmental variables and image regions contribute
-        to the model's predictions.
+        Explainability will help us understand which
+        environmental variables and image regions influence
+        the model predictions.
         """
     )
 
-    # --------------------------------------------------------
-    # ENVIRONMENTAL FEATURE SELECTION
-    # --------------------------------------------------------
-
     st.subheader(
-        "🌍 Selected Environmental Features"
+        "🧩 SHAP"
     )
 
     st.write(
         f"""
-        The saved feature-selection pipeline contains
-        **{len(selected_env_cols)} selected environmental variables**
-        from the original set of **{len(env_cols)} variables**.
+        The model uses {len(env_cols)} environmental variables,
+        with {len(selected_env_cols)} selected variables.
         """
     )
 
-    selected_df = pd.DataFrame(
+    st.write(
+        "Selected environmental variables:"
+    )
+
+    shap_features = pd.DataFrame(
         {
-            "Selected Environmental Feature":
-                selected_env_cols
+            "Feature": selected_env_cols
         }
     )
 
     st.dataframe(
-        selected_df,
+        shap_features,
         use_container_width=True,
         hide_index=True
     )
 
-    # --------------------------------------------------------
-    # SHAP
-    # --------------------------------------------------------
+    st.info(
+        """
+        SHAP values will be calculated from the real trained
+        model and real observations. We will add the actual
+        SHAP plots after generating them in Google Colab.
+        """
+    )
 
     st.divider()
 
     st.subheader(
-        "🧩 SHAP Explainability"
+        "🔥 Grad-CAM"
     )
 
     st.write(
         """
-        SHAP can be used to estimate how environmental variables
-        contribute to individual predictions or to the model's
-        overall behaviour.
-
-        The final research version should calculate SHAP values
-        using the actual trained model and an appropriate
-        background dataset.
+        Grad-CAM will be used to visualize which parts of the
+        plant image contribute to the model's prediction.
         """
     )
 
     st.info(
-        "Actual SHAP values are intentionally not fabricated "
-        "here. They should be generated from the trained model "
-        "and real background/validation observations in Colab."
-    )
-
-    # --------------------------------------------------------
-    # GRAD-CAM
-    # --------------------------------------------------------
-
-    st.divider()
-
-    st.subheader(
-        "🔥 Image Explainability with Grad-CAM"
-    )
-
-    st.write(
         """
-        Grad-CAM can be used to highlight image regions that
-        contribute strongly to a neural-network prediction.
-
-        This is particularly useful for demonstrating whether
-        the model is focusing on biologically meaningful regions
-        of the plant image.
+        The correct convolutional layer must first be identified
+        from the trained model before generating the Grad-CAM
+        heatmap.
         """
     )
 
-    if st.session_state.image is not None:
-
-        st.image(
-            st.session_state.image,
-            caption="Image used for prediction",
-            width=400
-        )
-
-        st.info(
-            "Grad-CAM requires identification of the appropriate "
-            "convolutional layer in the saved multimodal model. "
-            "Once that layer is identified, the heatmap can be "
-            "added here without changing the prediction pipeline."
-        )
-
-    else:
-
-        st.info(
-            "Run a prediction first to load the plant image."
-        )
-
 
 # ============================================================
-# PAGE 5: ENVIRONMENTAL FEATURES
+# ENVIRONMENTAL DATA
 # ============================================================
 
-elif page == "🌍 Environmental Features":
+elif page == "🌍 Environmental Data":
 
     st.markdown(
         '<div class="main-title">'
-        '🌍 Environmental Feature Explorer'
+        '🌍 Environmental Features'
         '</div>',
         unsafe_allow_html=True
     )
 
     st.write(
         f"""
-        The model was trained with **{len(env_cols)} environmental
-        variables**.
+        The model receives {len(env_cols)} environmental
+        variables.
         """
     )
 
-    climate_features = [
+    climate = [
         x for x in env_cols
         if x.startswith("WORLDCLIM")
     ]
 
-    soil_features = [
+    soil = [
         x for x in env_cols
         if x.startswith("SOIL")
     ]
 
-    modis_features = [
+    modis = [
         x for x in env_cols
         if x.startswith("MODIS")
     ]
 
-    vod_features = [
+    vod = [
         x for x in env_cols
         if x.startswith("VOD")
     ]
@@ -1157,39 +948,39 @@ elif page == "🌍 Environmental Features":
     with c1:
         st.metric(
             "Climate",
-            len(climate_features)
+            len(climate)
         )
 
     with c2:
         st.metric(
             "Soil",
-            len(soil_features)
+            len(soil)
         )
 
     with c3:
         st.metric(
             "MODIS",
-            len(modis_features)
+            len(modis)
         )
 
     with c4:
         st.metric(
             "VOD",
-            len(vod_features)
+            len(vod)
         )
 
     st.divider()
 
     st.subheader(
-        "All Environmental Variables"
+        "Environmental Variables"
     )
 
     feature_df = pd.DataFrame(
         {
-            "Environmental Feature": env_cols,
-            "Selected Feature": [
-                feature in selected_env_cols
-                for feature in env_cols
+            "Feature": env_cols,
+            "Selected": [
+                x in selected_env_cols
+                for x in env_cols
             ]
         }
     )
@@ -1211,7 +1002,7 @@ elif page == "🌍 Environmental Features":
 
 
 # ============================================================
-# PAGE 6: MODEL ARCHITECTURE
+# MODEL ARCHITECTURE
 # ============================================================
 
 elif page == "🧠 Model Architecture":
@@ -1225,82 +1016,81 @@ elif page == "🧠 Model Architecture":
 
     st.write(
         """
-        The trained model is a multimodal neural network.
-        It receives an image input and an environmental input,
-        combines learned representations, and produces six
-        continuous outputs.
+        Our model combines two information sources:
+
+        1. Plant imagery
+
+        2. Environmental information
+
+        These representations are combined and used to predict
+        six continuous numerical plant functional traits.
         """
     )
 
     st.code(
         """
-                 PLANT IMAGE
-                     │
-                     ▼
-              Image Network
-                     │
-                     ▼
-              Image Features
-                     │
-                     │
-                     ├──────────────┐
-                                    │
-                                    ▼
-                                  FUSION
-                                    ▲
-                                    │
-                     ┌──────────────┘
-                     │
-              ENVIRONMENT
-                     │
-                     ▼
-              163 VARIABLES
-                     │
-                     ▼
-              Environmental
-                 Network
-                     │
-                     ▼
-             Environmental
-                Features
-                     │
-                     ▼
-                  FUSION
-                     │
-                     ▼
-            MULTI-OUTPUT REGRESSION
-                     │
-          ┌──────────┼──────────┐
-          ▼          ▼          ▼
-       Trait 1    Trait 2     Trait 3
-          │          │           │
-          └──────────┼───────────┘
-                     │
-                  ... six
-                  outputs
+             PLANT IMAGE
+                  |
+                  v
+             IMAGE MODEL
+                  |
+                  v
+             IMAGE FEATURES
+                  |
+                  |
+                  +-------------+
+                                |
+                                v
+                              FUSION
+                                ^
+                                |
+                  +-------------+
+                  |
+          ENVIRONMENTAL DATA
+                  |
+                  v
+              163 FEATURES
+                  |
+                  v
+          ENVIRONMENT PROCESSING
+                  |
+                  v
+          ENVIRONMENT FEATURES
+                  |
+                  v
+                FUSION
+                  |
+                  v
+          REGRESSION NETWORK
+                  |
+                  v
+          SIX NUMERICAL OUTPUTS
         """,
         language="text"
     )
 
     st.subheader(
-        "Verified Model Input / Output Dimensions"
+        "Verified Model Dimensions"
     )
 
     c1, c2, c3 = st.columns(3)
 
     with c1:
+
         st.metric(
-            "Image",
+            "Image Input",
             "(224, 224, 3)"
         )
 
     with c2:
+
         st.metric(
-            "Environment",
+            "Environmental Input",
             "(163,)"
         )
 
     with c3:
+
         st.metric(
             "Output",
             "(6,)"
@@ -1309,22 +1099,24 @@ elif page == "🧠 Model Architecture":
     st.divider()
 
     st.subheader(
-        "Six Numerical Outputs"
+        "Research Design"
     )
 
     architecture_df = pd.DataFrame(
         {
-            "Output": [
-                f"Output {i + 1}"
-                for i in range(6)
+            "Component": [
+                "Plant image",
+                "Environmental variables",
+                "Selected variables",
+                "Model output",
+                "Problem type"
             ],
-            "Trait": [
-                TRAIT_NAMES[target]
-                for target in TARGETS
-            ],
-            "Type": [
-                "Continuous numerical"
-                for _ in TARGETS
+            "Value": [
+                "224 × 224 RGB",
+                "163",
+                "15",
+                "6 numerical values",
+                "Multi-output regression"
             ]
         }
     )
@@ -1338,20 +1130,19 @@ elif page == "🧠 Model Architecture":
     st.divider()
 
     st.subheader(
-        "⚠️ Scientific Interpretation"
+        "Scientific Interpretation"
     )
 
     st.write(
         """
         The model learns statistical relationships between
-        image/environmental information and observed plant
-        functional traits.
+        plant images, environmental conditions and observed
+        plant functional traits.
 
-        Model explanations should therefore be interpreted as
-        associations learned by the model rather than evidence
+        Explainability results should therefore be interpreted
+        as model associations and not automatically as evidence
         of biological causation.
-        """
-    )
+        """)
 
 
 # ============================================================
@@ -1361,7 +1152,7 @@ elif page == "🧠 Model Architecture":
 st.divider()
 
 st.caption(
-    "Plant Functional Trait Predictor • "
-    "Multimodal Deep Learning • Multi-output Regression"
+    "Plant Functional Trait Predictor | "
+    "Multimodal Deep Learning | "
+    "Multi-output Regression"
 )
-```
