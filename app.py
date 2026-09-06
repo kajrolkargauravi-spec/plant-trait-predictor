@@ -1,7 +1,5 @@
-```python
-"""
-Plant Functional Trait Predictor
-A multimodal (image + environmental) research application.
+"""Plant Functional Trait Predictor
+Multimodal image + environmental plant trait prediction application.
 """
 
 import os
@@ -57,73 +55,67 @@ TARGET_NAMES = {
 }
 
 DEFAULT_UNITS = {
-    "X4_mean": "g/cm3",
-    "X11_mean": "mm2/mg",
+    "X4_mean": "g/cm³",
+    "X11_mean": "mm²/mg",
     "X18_mean": "cm",
     "X26_mean": "g",
-    "X50_mean": "g/m2",
-    "X3112_mean": "mm2"
+    "X50_mean": "g/m²",
+    "X3112_mean": "mm²"
 }
-
-ARTIFACT_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
-
-
-def artifact_path(name):
-    return os.path.join(
-        ARTIFACT_DIR,
-        name
-    )
 
 
 # ============================================================
-# PAGE STYLING
+# FILE PATH
+# ============================================================
+
+ARTIFACT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def artifact_path(filename):
+    return os.path.join(ARTIFACT_DIR, filename)
+
+
+# ============================================================
+# STYLING
 # ============================================================
 
 st.markdown(
     """
     <style>
+        .main > div {
+            padding-top: 1.5rem;
+        }
 
-    .main > div {
-        padding-top: 1.5rem;
-    }
+        .metric-card {
+            background-color: #f7f8f7;
+            border: 1px solid #e3e6e3;
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem;
+        }
 
-    .metric-card {
-        background-color: #f7f8f7;
-        border: 1px solid #e3e6e3;
-        border-radius: 8px;
-        padding: 1rem 1.25rem;
-        margin-bottom: 0.75rem;
-    }
+        .metric-card .label {
+            font-size: 0.85rem;
+            color: #5c6b5c;
+            margin-bottom: 0.25rem;
+        }
 
-    .metric-card .label {
-        font-size: 0.85rem;
-        color: #5c6b5c;
-        margin-bottom: 0.25rem;
-    }
+        .metric-card .value {
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: #1f2b1f;
+        }
 
-    .metric-card .value {
-        font-size: 1.6rem;
-        font-weight: 600;
-        color: #1f2b1f;
-    }
+        .metric-card .unit {
+            font-size: 0.9rem;
+            color: #7a877a;
+            margin-left: 0.35rem;
+        }
 
-    .metric-card .unit {
-        font-size: 0.9rem;
-        color: #7a877a;
-        margin-left: 0.35rem;
-    }
-
-    .section-note {
-        color: #6b6b6b;
-        font-size: 0.9rem;
-    }
-
-    h1, h2, h3 {
-        font-weight: 600;
-    }
-
+        .section-note {
+            color: #6b6b6b;
+            font-size: 0.9rem;
+        }
     </style>
     """,
     unsafe_allow_html=True
@@ -131,59 +123,128 @@ st.markdown(
 
 
 # ============================================================
-# MODEL + ARTIFACT LOADING
+# OPTIONAL FILE LOADER
+# ============================================================
+
+def optional_load(filename, loader):
+
+    path = artifact_path(filename)
+
+    if not os.path.exists(path):
+        return None
+
+    try:
+        return loader(path)
+    except Exception:
+        return None
+
+
+# ============================================================
+# LOAD OPTIONAL FILES
+# ============================================================
+
+def load_units():
+
+    path = artifact_path("target_units.json")
+
+    if not os.path.exists(path):
+        return DEFAULT_UNITS
+
+    try:
+
+        with open(path, "r", encoding="utf-8") as file:
+            units = json.load(file)
+
+        if isinstance(units, dict):
+            return units
+
+    except Exception:
+        pass
+
+    return DEFAULT_UNITS
+
+
+def load_results_table():
+    return optional_load(
+        "results_table.csv",
+        pd.read_csv
+    )
+
+
+def load_ablation_results():
+    return optional_load(
+        "ablation_results.csv",
+        pd.read_csv
+    )
+
+
+def load_shap_background():
+    return optional_load(
+        "shap_background.pkl",
+        joblib.load
+    )
+
+
+def load_shap_env_cols():
+    return optional_load(
+        "shap_env_cols.pkl",
+        joblib.load
+    )
+
+
+def load_training_distribution():
+    return optional_load(
+        "target_distributions.csv",
+        pd.read_csv
+    )
+
+
+def load_env_groups():
+
+    path = artifact_path("env_groups.json")
+
+    if not os.path.exists(path):
+        return None
+
+    try:
+
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    except Exception:
+        return None
+
+
+UNITS = load_units()
+RESULTS_TABLE = load_results_table()
+ABLATION_RESULTS = load_ablation_results()
+SHAP_BACKGROUND = load_shap_background()
+SHAP_ENV_COLS = load_shap_env_cols()
+TARGET_DIST = load_training_distribution()
+ENV_GROUPS = load_env_groups()
+
+
+# ============================================================
+# MODEL LOADING
 # ============================================================
 
 @st.cache_resource
 def load_model_artifacts():
 
-    required_files = [
-        "multimodal_model.keras",
-        "env_scaler.pkl",
-        "target_scaler.pkl",
-        "env_cols.pkl",
-        "selected_env_cols.pkl",
-        "env_medians.pkl"
-    ]
-
-    missing_files = []
-
-    for filename in required_files:
-
-        if not os.path.exists(
-            artifact_path(filename)
-        ):
-            missing_files.append(filename)
-
-    if missing_files:
-
-        raise FileNotFoundError(
-            "The following required files are missing: "
-            + ", ".join(missing_files)
-        )
-
-    # --------------------------------------------------------
-    # Load Keras model
-    # --------------------------------------------------------
-    #
-    # compile=False is important for deployment because
-    # the training loss/metrics do not need to be restored.
-    #
-    # safe_mode=False helps with models saved using Keras
-    # serialization.
-    #
-
-    model = tf.keras.models.load_model(
-        artifact_path(
-            "multimodal_model.keras"
-        ),
-        compile=False,
-        safe_mode=False
+    model_path = artifact_path(
+        "multimodal_model.keras"
     )
 
-    # --------------------------------------------------------
-    # Load preprocessing artifacts
-    # --------------------------------------------------------
+    if not os.path.exists(model_path):
+
+        raise FileNotFoundError(
+            "multimodal_model.keras was not found."
+        )
+
+    model = tf.keras.models.load_model(
+        model_path,
+        compile=False
+    )
 
     env_scaler = joblib.load(
         artifact_path("env_scaler.pkl")
@@ -215,67 +276,8 @@ def load_model_artifacts():
     )
 
 
-# ============================================================
-# OPTIONAL ARTIFACT LOADERS
-# ============================================================
-
-def load_optional_pickle(filename):
-
-    path = artifact_path(filename)
-
-    if not os.path.exists(path):
-        return None
-
-    try:
-
-        return joblib.load(path)
-
-    except Exception:
-
-        return None
-
-
-def load_optional_csv(filename):
-
-    path = artifact_path(filename)
-
-    if not os.path.exists(path):
-        return None
-
-    try:
-
-        return pd.read_csv(path)
-
-    except Exception:
-
-        return None
-
-
-def load_optional_json(filename):
-
-    path = artifact_path(filename)
-
-    if not os.path.exists(path):
-        return None
-
-    try:
-
-        with open(
-            path,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            return json.load(f)
-
-    except Exception:
-
-        return None
-
-
-# ============================================================
-# LOAD ALL ARTIFACTS
-# ============================================================
+MODEL_LOADED = False
+LOAD_ERROR = ""
 
 try:
 
@@ -286,74 +288,23 @@ try:
         ENV_COLS,
         SELECTED_ENV_COLS,
         ENV_MEDIANS
-
     ) = load_model_artifacts()
 
     MODEL_LOADED = True
-    LOAD_ERROR = None
 
-except Exception as e:
+except Exception as error:
 
     MODEL_LOADED = False
-    LOAD_ERROR = str(e)
-
-    model = None
-    env_scaler = None
-    target_scaler = None
-    ENV_COLS = []
-    SELECTED_ENV_COLS = []
-    ENV_MEDIANS = {}
-
-
-# Optional files
-
-UNITS = load_optional_json(
-    "target_units.json"
-)
-
-if not isinstance(
-    UNITS,
-    dict
-):
-    UNITS = DEFAULT_UNITS
-
-
-RESULTS_TABLE = load_optional_csv(
-    "results_table.csv"
-)
-
-ABLATION_RESULTS = load_optional_csv(
-    "ablation_results.csv"
-)
-
-SHAP_BACKGROUND = load_optional_pickle(
-    "shap_background.pkl"
-)
-
-SHAP_ENV_COLS = load_optional_pickle(
-    "shap_env_cols.pkl"
-)
-
-TARGET_DIST = load_optional_csv(
-    "target_distributions.csv"
-)
-
-ENV_GROUPS = load_optional_json(
-    "env_groups.json"
-)
+    LOAD_ERROR = str(error)
 
 
 # ============================================================
-# ENVIRONMENTAL GROUP FUNCTIONS
+# ENVIRONMENTAL GROUPS
 # ============================================================
 
-def infer_group(
-    column_name
-):
+def infer_group(column_name):
 
-    name = str(
-        column_name
-    ).upper()
+    name = str(column_name).upper()
 
     if any(
         keyword in name
@@ -364,7 +315,6 @@ def infer_group(
             "CLIM"
         ]
     ):
-
         return "Climate"
 
     if "SOIL" in name:
@@ -379,197 +329,104 @@ def infer_group(
     return "Other"
 
 
-def get_env_group(
-    column_name
-):
+def get_env_group(column_name):
 
-    if isinstance(
-        ENV_GROUPS,
-        dict
-    ):
+    if ENV_GROUPS is not None:
 
         if column_name in ENV_GROUPS:
+            return ENV_GROUPS[column_name]
 
-            return ENV_GROUPS[
-                column_name
-            ]
-
-    return infer_group(
-        column_name
-    )
+    return infer_group(column_name)
 
 
 # ============================================================
 # IMAGE PREPROCESSING
 # ============================================================
 
-def preprocess_image(
-    pil_image
-):
+def preprocess_image(image):
 
-    image = pil_image.convert(
-        "RGB"
-    )
+    image = image.convert("RGB")
 
     image = image.resize(
-        (
-            IMG_SIZE,
-            IMG_SIZE
-        )
+        (IMG_SIZE, IMG_SIZE)
     )
 
-    array = np.array(
+    image_array = np.array(
         image
-    ).astype(
-        np.float32
-    )
+    ).astype(np.float32)
 
-    array = (
-        tf.keras
-        .applications
-        .efficientnet
-        .preprocess_input(
-            array
-        )
+    image_array = (
+        tf.keras.applications.efficientnet
+        .preprocess_input(image_array)
     )
 
     return np.expand_dims(
-        array,
+        image_array,
         axis=0
     )
 
 
 # ============================================================
-# ENVIRONMENT PREPROCESSING
+# ENVIRONMENTAL VECTOR
 # ============================================================
 
-def build_env_vector(
-    user_values
-):
+def build_env_vector(user_values):
 
-    # Copy training medians
-    if hasattr(
-        ENV_MEDIANS,
-        "copy"
-    ):
-
-        row = ENV_MEDIANS.copy()
-
-    else:
-
-        row = dict(
-            ENV_MEDIANS
-        )
-
-    # Replace selected variables
-    # with user-provided values.
+    row = ENV_MEDIANS.copy()
 
     for feature, value in user_values.items():
 
-        if feature in ENV_COLS:
-
-            row[feature] = float(
-                value
-            )
-
-    values = []
-
-    for column in ENV_COLS:
-
-        try:
-
-            value = row[column]
-
-        except Exception:
-
-            value = 0.0
-
-        if pd.isna(value):
-
-            value = 0.0
-
-        values.append(
-            float(value)
-        )
+        if feature in row:
+            row[feature] = value
 
     vector = np.array(
-        [values],
+        [
+            [
+                row[column]
+                for column in ENV_COLS
+            ]
+        ],
         dtype=np.float32
     )
 
-    scaled_vector = (
-        env_scaler.transform(
-            vector
-        )
+    scaled_vector = env_scaler.transform(
+        vector
     )
 
-    return (
-        scaled_vector,
-        row
-    )
+    return scaled_vector, row
 
 
 # ============================================================
 # PREDICTION
 # ============================================================
 
-def predict(
-    pil_image,
-    user_env_values
-):
-
-    if model is None:
-
-        raise RuntimeError(
-            "The model is not loaded."
-        )
+def predict(image, user_environment):
 
     image_array = preprocess_image(
-        pil_image
+        image
     )
 
     env_scaled, full_env_row = (
         build_env_vector(
-            user_env_values
+            user_environment
         )
     )
 
-    prediction_scaled = (
-        model.predict(
-            [
-                image_array,
-                env_scaled
-            ],
-            verbose=0
-        )
+    predictions_scaled = model.predict(
+        [image_array, env_scaled],
+        verbose=0
     )
 
-    prediction_scaled = np.asarray(
-        prediction_scaled
+    predictions = target_scaler.inverse_transform(
+        predictions_scaled
     )
 
-    # Reverse target scaling
-    prediction = (
-        target_scaler
-        .inverse_transform(
-            prediction_scaled
-        )
-    )
-
-    # Reverse log1p transformation
-    prediction = np.expm1(
-        prediction
-    )
-
-    # Remove extremely small
-    # numerical negative values.
-    prediction = np.maximum(
-        prediction,
-        0
+    predictions = np.expm1(
+        predictions
     )
 
     return (
-        prediction[0],
+        predictions[0],
         full_env_row,
         env_scaled
     )
@@ -581,59 +438,20 @@ def predict(
 
 def compute_shap_for_prediction(
     env_scaled_row,
-    trait_idx
+    trait_index
 ):
 
     if SHAP_BACKGROUND is None:
-
         return None
 
-    if model is None:
-
+    if SHAP_ENV_COLS is None:
         return None
 
     try:
 
         import shap
 
-    except ImportError:
-
-        return None
-
-    try:
-
-        background = np.asarray(
-            SHAP_BACKGROUND,
-            dtype=np.float32
-        )
-
-        current_row = np.asarray(
-            env_scaled_row,
-            dtype=np.float32
-        )
-
-        if background.ndim == 1:
-
-            background = background.reshape(
-                1,
-                -1
-            )
-
-        if current_row.ndim == 1:
-
-            current_row = current_row.reshape(
-                1,
-                -1
-            )
-
-        if (
-            background.shape[1]
-            != current_row.shape[1]
-        ):
-
-            return None
-
-        def predict_fn(x):
+        def prediction_function(x):
 
             dummy_images = np.zeros(
                 (
@@ -646,31 +464,24 @@ def compute_shap_for_prediction(
             )
 
             predictions = model.predict(
-                [
-                    dummy_images,
-                    x
-                ],
+                [dummy_images, x],
                 verbose=0
             )
 
             return predictions[
                 :,
-                trait_idx
+                trait_index
             ]
 
-        explainer = (
-            shap.KernelExplainer(
-                predict_fn,
-                background
-            )
+        explainer = shap.KernelExplainer(
+            prediction_function,
+            SHAP_BACKGROUND
         )
 
-        shap_values = (
-            explainer.shap_values(
-                current_row,
-                nsamples=50,
-                silent=True
-            )
+        shap_values = explainer.shap_values(
+            env_scaled_row,
+            nsamples=100,
+            silent=True
         )
 
         return shap_values
@@ -684,34 +495,17 @@ def compute_shap_for_prediction(
 # GRAD-CAM
 # ============================================================
 
-def compute_gradcam(
-    pil_image,
-    trait_idx
-):
-
-    if model is None:
-
-        return None
+def compute_gradcam(image):
 
     try:
 
         import cv2
 
-    except ImportError:
-
-        return None
-
-    try:
-
         image_array = preprocess_image(
-            pil_image
+            image
         )
 
-        # ----------------------------------------------------
-        # Find EfficientNet branch
-        # ----------------------------------------------------
-
-        base_layer = None
+        base_model = None
 
         for layer in model.layers:
 
@@ -720,87 +514,65 @@ def compute_gradcam(
                 in layer.name.lower()
             ):
 
-                base_layer = layer
+                base_model = layer
                 break
 
-        if base_layer is None:
-
+        if base_model is None:
             return None
 
-        # ----------------------------------------------------
-        # Find last convolutional layer
-        # ----------------------------------------------------
-
-        convolutional_layer = None
+        convolution_layer = None
 
         for layer in reversed(
-            base_layer.layers
+            base_model.layers
         ):
 
             try:
 
-                output_shape = (
-                    layer.output.shape
-                )
+                output_shape = layer.output.shape
 
-                if len(
-                    output_shape
-                ) == 4:
+                if len(output_shape) == 4:
 
-                    convolutional_layer = (
-                        layer
-                    )
-
+                    convolution_layer = layer
                     break
 
             except Exception:
 
                 continue
 
-        if convolutional_layer is None:
-
+        if convolution_layer is None:
             return None
 
-        feature_model = tf.keras.Model(
-            inputs=base_layer.input,
-            outputs=convolutional_layer.output
+        grad_model = tf.keras.models.Model(
+            inputs=base_model.input,
+            outputs=[
+                convolution_layer.output,
+                base_model.output
+            ]
         )
-
-        # ----------------------------------------------------
-        # Generate activation map
-        # ----------------------------------------------------
 
         with tf.GradientTape() as tape:
 
-            convolution_output = (
-                feature_model(
-                    image_array,
-                    training=False
+            convolution_output, features = (
+                grad_model(
+                    image_array
                 )
             )
 
-            tape.watch(
-                convolution_output
-            )
-
-            score = tf.reduce_mean(
-                convolution_output
+            loss = tf.reduce_mean(
+                features
             )
 
         gradients = tape.gradient(
-            score,
+            loss,
             convolution_output
         )
 
         if gradients is None:
-
             return None
 
-        pooled_gradients = (
-            tf.reduce_mean(
-                gradients,
-                axis=(0, 1, 2)
-            )
+        pooled_gradients = tf.reduce_mean(
+            gradients,
+            axis=(0, 1, 2)
         )
 
         convolution_output = (
@@ -828,59 +600,35 @@ def compute_gradcam(
             heatmap
         )
 
-        if float(
-            maximum
-        ) == 0:
+        heatmap = heatmap / (
+            maximum + 1e-8
+        )
 
-            return None
-
-        heatmap = (
-            heatmap / maximum
-        ).numpy()
-
-        # ----------------------------------------------------
-        # Resize heatmap
-        # ----------------------------------------------------
+        heatmap = heatmap.numpy()
 
         heatmap = cv2.resize(
             heatmap,
-            (
-                IMG_SIZE,
-                IMG_SIZE
-            )
+            (IMG_SIZE, IMG_SIZE)
         )
 
         heatmap = np.uint8(
             255 * heatmap
         )
 
-        heatmap_color = (
-            cv2.applyColorMap(
-                heatmap,
-                cv2.COLORMAP_JET
-            )
+        heatmap_color = cv2.applyColorMap(
+            heatmap,
+            cv2.COLORMAP_JET
         )
-
-        # ----------------------------------------------------
-        # Overlay
-        # ----------------------------------------------------
 
         original = np.array(
-            pil_image
-            .convert("RGB")
-            .resize(
-                (
-                    IMG_SIZE,
-                    IMG_SIZE
-                )
+            image.convert("RGB").resize(
+                (IMG_SIZE, IMG_SIZE)
             )
         )
 
-        original_bgr = (
-            cv2.cvtColor(
-                original,
-                cv2.COLOR_RGB2BGR
-            )
+        original_bgr = cv2.cvtColor(
+            original,
+            cv2.COLOR_RGB2BGR
         )
 
         overlay = cv2.addWeighted(
@@ -891,14 +639,12 @@ def compute_gradcam(
             0
         )
 
-        overlay_rgb = (
-            cv2.cvtColor(
-                overlay,
-                cv2.COLOR_BGR2RGB
-            )
+        overlay = cv2.cvtColor(
+            overlay,
+            cv2.COLOR_BGR2RGB
         )
 
-        return overlay_rgb
+        return overlay
 
     except Exception:
 
@@ -961,7 +707,7 @@ page = st.sidebar.radio(
 if not MODEL_LOADED:
 
     st.sidebar.error(
-        "Model artifacts could not be loaded."
+        "Model could not be loaded."
     )
 
 
@@ -978,42 +724,12 @@ if page == "Home":
     st.write(
         """
         This application estimates six continuous plant
-        functional traits from a plant photograph combined
+        functional traits using a plant photograph together
         with environmental and geographic information.
-
-        It is the deployment component of a research project
-        comparing unimodal and multimodal approaches to
-        plant trait prediction.
         """
     )
 
-    if not MODEL_LOADED:
-
-        st.error(
-            "Could not load the model."
-        )
-
-        st.code(
-            LOAD_ERROR
-        )
-
-        st.info(
-            """
-            Check that the following files are present
-            in the same folder as app.py:
-
-            multimodal_model.keras
-            env_scaler.pkl
-            target_scaler.pkl
-            env_cols.pkl
-            selected_env_cols.pkl
-            env_medians.pkl
-            """
-        )
-
-    col1, col2, col3 = (
-        st.columns(3)
-    )
+    col1, col2, col3 = st.columns(3)
 
     with col1:
 
@@ -1023,7 +739,6 @@ if page == "Home":
                 <div class="label">
                     Predicted traits
                 </div>
-
                 <div class="value">
                     6
                 </div>
@@ -1034,7 +749,7 @@ if page == "Home":
 
     with col2:
 
-        n_env = (
+        number_environmental = (
             len(ENV_COLS)
             if MODEL_LOADED
             else "—"
@@ -1046,9 +761,8 @@ if page == "Home":
                 <div class="label">
                     Environmental variables
                 </div>
-
                 <div class="value">
-                    {n_env}
+                    {number_environmental}
                 </div>
             </div>
             """,
@@ -1057,10 +771,8 @@ if page == "Home":
 
     with col3:
 
-        n_selected = (
-            len(
-                SELECTED_ENV_COLS
-            )
+        number_selected = (
+            len(SELECTED_ENV_COLS)
             if MODEL_LOADED
             else "—"
         )
@@ -1071,9 +783,8 @@ if page == "Home":
                 <div class="label">
                     Variables shown
                 </div>
-
                 <div class="value">
-                    {n_selected}
+                    {number_selected}
                 </div>
             </div>
             """,
@@ -1090,11 +801,11 @@ if page == "Home":
         representations from the plant photograph.
 
         Environmental branch: a multilayer perceptron
-        learns nonlinear relationships between
-        environmental and geographic variables.
+        learns relationships between environmental variables
+        and plant traits.
 
-        Fusion: the two representations are combined
-        before producing the six numerical predictions.
+        Fusion: the two representations are combined before
+        producing the six numerical predictions.
         """
     )
 
@@ -1112,8 +823,11 @@ elif page == "Predict":
     if not MODEL_LOADED:
 
         st.error(
-            f"Could not load model artifacts: "
-            f"{LOAD_ERROR}"
+            "Could not load model artifacts."
+        )
+
+        st.code(
+            LOAD_ERROR
         )
 
     else:
@@ -1122,35 +836,27 @@ elif page == "Predict":
             [1, 1.2]
         )
 
-        # ----------------------------------------------------
-        # IMAGE
-        # ----------------------------------------------------
-
         with left:
 
             st.subheader(
                 "Plant Image"
             )
 
-            uploaded_file = (
-                st.file_uploader(
-                    "Upload a plant image",
-                    type=[
-                        "jpg",
-                        "jpeg",
-                        "png"
-                    ]
-                )
+            uploaded_file = st.file_uploader(
+                "Upload a plant image",
+                type=[
+                    "jpg",
+                    "jpeg",
+                    "png"
+                ]
             )
 
-            if uploaded_file:
+            if uploaded_file is not None:
 
                 try:
 
-                    pil_image = (
-                        Image.open(
-                            uploaded_file
-                        ).convert("RGB")
+                    pil_image = Image.open(
+                        uploaded_file
                     )
 
                     st.image(
@@ -1158,21 +864,18 @@ elif page == "Predict":
                         use_container_width=True
                     )
 
-                except Exception as e:
+                except Exception:
 
                     pil_image = None
 
                     st.error(
-                        f"Could not read image: {e}"
+                        "The uploaded image could not "
+                        "be read."
                     )
 
             else:
 
                 pil_image = None
-
-        # ----------------------------------------------------
-        # ENVIRONMENT
-        # ----------------------------------------------------
 
         with right:
 
@@ -1180,60 +883,52 @@ elif page == "Predict":
                 "Environmental Information"
             )
 
-            st.markdown(
+            st.write(
                 f"""
-                <p class="section-note">
                 Enter values for the
                 {len(SELECTED_ENV_COLS)}
-                environmental variables shown below.
-                All remaining variables are filled using
-                training-data medians.
-                </p>
-                """,
-                unsafe_allow_html=True
+                selected environmental variables.
+
+                Remaining variables are automatically
+                filled using training-data median values.
+                """
             )
 
             user_values = {}
 
             input_columns = st.columns(2)
 
-            for i, feature in enumerate(
+            for index, feature in enumerate(
                 SELECTED_ENV_COLS
             ):
 
-                try:
-
-                    default_value = float(
-                        ENV_MEDIANS.get(
-                            feature,
-                            0.0
-                        )
+                default_value = float(
+                    ENV_MEDIANS.get(
+                        feature,
+                        0.0
                     )
-
-                except Exception:
-
-                    default_value = 0.0
+                )
 
                 with input_columns[
-                    i % 2
+                    index % 2
                 ]:
 
-                    user_values[
-                        feature
-                    ] = st.number_input(
-                        feature,
-                        value=default_value,
-                        format="%.4f",
-                        key=f"environment_{feature}"
+                    user_values[feature] = (
+                        st.number_input(
+                            feature,
+                            value=default_value,
+                            format="%.4f",
+                            key=(
+                                f"environment_{feature}"
+                            )
+                        )
                     )
 
         st.divider()
 
-        predict_clicked = (
-            st.button(
-                "Predict Plant Traits",
-                type="primary"
-            )
+        predict_clicked = st.button(
+            "Predict Plant Traits",
+            type="primary"
         )
 
         if predict_clicked:
@@ -1253,16 +948,16 @@ elif page == "Predict":
                     ):
 
                         (
-                            pred_values,
-                            full_env_row,
-                            env_scaled
+                            predictions,
+                            environment_row,
+                            environment_scaled
                         ) = predict(
                             pil_image,
                             user_values
                         )
 
                     st.session_state.last_prediction = (
-                        pred_values
+                        predictions
                     )
 
                     st.session_state.last_image = (
@@ -1270,47 +965,48 @@ elif page == "Predict":
                     )
 
                     st.session_state.last_env_row = (
-                        full_env_row
+                        environment_row
                     )
 
                     st.session_state.last_env_scaled = (
-                        env_scaled
+                        environment_scaled
                     )
 
+                    history_record = {
+                        "Prediction": (
+                            len(
+                                st.session_state
+                                .prediction_history
+                            ) + 1
+                        )
+                    }
+
+                    for column, value in zip(
+                        TARGET_COLS,
+                        predictions
+                    ):
+
+                        history_record[
+                            TARGET_NAMES[column]
+                        ] = float(value)
+
                     st.session_state.prediction_history.append(
-                        {
-                            "Prediction":
-                                len(
-                                    st.session_state
-                                    .prediction_history
-                                ) + 1,
-
-                            **{
-                                TARGET_NAMES[col]:
-                                    float(value)
-
-                                for col, value
-                                in zip(
-                                    TARGET_COLS,
-                                    pred_values
-                                )
-                            }
-                        }
+                        history_record
                     )
 
                     st.success(
                         "Prediction completed successfully."
                     )
 
-                except Exception as e:
+                except Exception as error:
 
                     st.error(
-                        f"Prediction failed: {e}"
+                        "Prediction failed."
                     )
 
-        # ----------------------------------------------------
-        # RESULTS
-        # ----------------------------------------------------
+                    st.exception(
+                        error
+                    )
 
         if (
             st.session_state.last_prediction
@@ -1321,90 +1017,71 @@ elif page == "Predict":
                 "Predicted Functional Traits"
             )
 
-            pred_values = (
-                st.session_state
-                .last_prediction
+            predictions = (
+                st.session_state.last_prediction
             )
 
-            metric_cols = st.columns(
-                3
-            )
+            metric_columns = st.columns(3)
 
-            for i, col_name in enumerate(
+            for index, column in enumerate(
                 TARGET_COLS
             ):
 
                 unit = UNITS.get(
-                    col_name,
+                    column,
                     ""
                 )
 
-                with metric_cols[
-                    i % 3
+                with metric_columns[
+                    index % 3
                 ]:
 
                     st.markdown(
                         f"""
                         <div class="metric-card">
-
                             <div class="label">
-                                {TARGET_NAMES[col_name]}
+                                {TARGET_NAMES[column]}
                             </div>
-
                             <div class="value">
-                                {pred_values[i]:.2f}
-
+                                {predictions[index]:.2f}
                                 <span class="unit">
                                     {unit}
                                 </span>
                             </div>
-
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-            # ------------------------------------------------
-            # DOWNLOAD REPORT
-            # ------------------------------------------------
-
-            report_df = pd.DataFrame(
+            report = pd.DataFrame(
                 {
                     "Trait": [
-                        TARGET_NAMES[c]
-                        for c in TARGET_COLS
+                        TARGET_NAMES[column]
+                        for column in TARGET_COLS
                     ],
-
-                    "Predicted Value": [
-                        float(v)
-                        for v in pred_values
-                    ],
-
+                    "Predicted Value": predictions,
                     "Unit": [
                         UNITS.get(
-                            c,
+                            column,
                             ""
                         )
-
-                        for c in TARGET_COLS
+                        for column in TARGET_COLS
                     ]
                 }
             )
 
-            csv_bytes = (
-                report_df
-                .to_csv(
-                    index=False
-                )
-                .encode(
-                    "utf-8"
-                )
+            csv_data = report.to_csv(
+                index=False
+            ).encode(
+                "utf-8"
             )
 
             st.download_button(
                 "Download Prediction Report",
-                data=csv_bytes,
-                file_name="plant_trait_prediction.csv",
+                data=csv_data,
+                file_name=(
+                    "plant_trait_prediction.csv"
+                ),
                 mime="text/csv"
             )
 
@@ -1419,10 +1096,7 @@ elif page == "Prediction Analysis":
         "Prediction Analysis"
     )
 
-    if (
-        st.session_state.last_prediction
-        is None
-    ):
+    if st.session_state.last_prediction is None:
 
         st.info(
             "Make a prediction on the Predict page first."
@@ -1430,147 +1104,107 @@ elif page == "Prediction Analysis":
 
     else:
 
-        pred_values = (
-            st.session_state
-            .last_prediction
+        predictions = (
+            st.session_state.last_prediction
         )
 
         st.subheader(
             "Prediction Profile"
         )
 
-        fig = go.Figure()
+        figure = go.Figure()
 
-        fig.add_trace(
+        figure.add_trace(
             go.Bar(
                 x=[
-                    TARGET_NAMES[c]
-                    for c in TARGET_COLS
+                    TARGET_NAMES[column]
+                    for column in TARGET_COLS
                 ],
-
-                y=pred_values
+                y=predictions
             )
         )
 
-        fig.update_layout(
+        figure.update_layout(
             yaxis_title="Predicted value",
-            height=420,
-            margin=dict(
-                l=10,
-                r=10,
-                t=30,
-                b=10
-            )
+            height=450
         )
 
         st.plotly_chart(
-            fig,
+            figure,
             use_container_width=True
         )
-
-        # ----------------------------------------------------
-        # DISTRIBUTION
-        # ----------------------------------------------------
 
         if TARGET_DIST is not None:
 
             st.subheader(
-                "Prediction vs. Training Data Distribution"
+                "Prediction vs Training Distribution"
             )
 
-            st.markdown(
-                """
-                <p class="section-note">
-                This comparison provides context about
-                where the prediction lies relative to
-                values observed in the training data.
-                It is not a confidence interval.
-                </p>
-                """,
-                unsafe_allow_html=True
+            trait_choice = st.selectbox(
+                "Select trait",
+                [
+                    TARGET_NAMES[column]
+                    for column in TARGET_COLS
+                ],
+                key="distribution_trait"
             )
 
-            trait_choice = (
-                st.selectbox(
-                    "Select trait",
-                    [
-                        TARGET_NAMES[c]
-                        for c in TARGET_COLS
-                    ],
-                    key="distribution_trait"
-                )
+            trait_column = next(
+                column
+                for column, name
+                in TARGET_NAMES.items()
+                if name == trait_choice
             )
 
-            col_key = next(
-                (
-                    c
+            if trait_column in TARGET_DIST.columns:
 
-                    for c, name
-                    in TARGET_NAMES.items()
+                figure2 = go.Figure()
 
-                    if name == trait_choice
-                ),
-                None
-            )
-
-            if (
-                col_key is not None
-                and col_key
-                in TARGET_DIST.columns
-            ):
-
-                idx = (
-                    TARGET_COLS.index(
-                        col_key
-                    )
-                )
-
-                fig2 = go.Figure()
-
-                fig2.add_trace(
+                figure2.add_trace(
                     go.Histogram(
                         x=TARGET_DIST[
-                            col_key
+                            trait_column
                         ],
                         nbinsx=40
                     )
                 )
 
-                fig2.add_vline(
-                    x=pred_values[idx],
+                trait_index = (
+                    TARGET_COLS.index(
+                        trait_column
+                    )
+                )
+
+                figure2.add_vline(
+                    x=predictions[
+                        trait_index
+                    ],
                     line_width=2,
                     annotation_text="Prediction"
                 )
 
-                fig2.update_layout(
-                    height=350
+                figure2.update_layout(
+                    height=400
                 )
 
                 st.plotly_chart(
-                    fig2,
+                    figure2,
                     use_container_width=True
                 )
 
-        # ----------------------------------------------------
-        # HISTORY
-        # ----------------------------------------------------
-
         if len(
-            st.session_state
-            .prediction_history
+            st.session_state.prediction_history
         ) > 1:
 
             st.subheader(
                 "Prediction History"
             )
 
-            history_df = pd.DataFrame(
-                st.session_state
-                .prediction_history
-            )
-
             st.dataframe(
-                history_df,
+                pd.DataFrame(
+                    st.session_state
+                    .prediction_history
+                ),
                 use_container_width=True
             )
 
@@ -1586,57 +1220,42 @@ elif page == "Explainability":
     )
 
     st.write(
-        "Why did the model make this prediction?"
+        """
+        This section shows which environmental variables
+        and image regions influenced the model prediction.
+        """
     )
 
-    if (
-        st.session_state.last_prediction
-        is None
-    ):
+    if st.session_state.last_prediction is None:
 
         st.info(
-            "Make a prediction on the Predict page first."
+            "Make a prediction first."
         )
 
     else:
 
-        trait_choice = (
-            st.selectbox(
-                "Select trait",
-                [
-                    TARGET_NAMES[c]
-                    for c in TARGET_COLS
-                ]
-            )
+        trait_choice = st.selectbox(
+            "Select trait",
+            [
+                TARGET_NAMES[column]
+                for column in TARGET_COLS
+            ]
         )
 
-        trait_col = next(
-            (
-                c
-
-                for c, name
-                in TARGET_NAMES.items()
-
-                if name == trait_choice
-            ),
-            None
+        trait_column = next(
+            column
+            for column, name
+            in TARGET_NAMES.items()
+            if name == trait_choice
         )
 
-        trait_idx = (
-            TARGET_COLS.index(
-                trait_col
-            )
+        trait_index = TARGET_COLS.index(
+            trait_column
         )
 
-        col_a, col_b = st.columns(
-            2
-        )
+        left, right = st.columns(2)
 
-        # ----------------------------------------------------
-        # SHAP
-        # ----------------------------------------------------
-
-        with col_a:
+        with left:
 
             st.subheader(
                 "Environmental Contribution"
@@ -1649,36 +1268,31 @@ elif page == "Explainability":
 
                 st.info(
                     """
-                    SHAP artifacts are not available.
+                    SHAP files are not available.
 
-                    Add:
-                    shap_background.pkl
-                    shap_env_cols.pkl
-
-                    to enable this panel.
+                    Add shap_background.pkl and
+                    shap_env_cols.pkl to enable this section.
                     """
                 )
 
             else:
 
                 with st.spinner(
-                    "Computing environmental explanation..."
+                    "Calculating SHAP explanation..."
                 ):
 
                     shap_values = (
                         compute_shap_for_prediction(
                             st.session_state
                             .last_env_scaled,
-                            trait_idx
+                            trait_index
                         )
                     )
 
                 if shap_values is None:
 
                     st.warning(
-                        "SHAP could not be computed. "
-                        "Check that the SHAP background "
-                        "matches the model input dimensions."
+                        "SHAP explanation could not be generated."
                     )
 
                 else:
@@ -1687,132 +1301,88 @@ elif page == "Explainability":
                         shap_values
                     ).flatten()
 
-                    features = list(
-                        SHAP_ENV_COLS
+                    shap_dataframe = pd.DataFrame(
+                        {
+                            "Feature": SHAP_ENV_COLS,
+                            "Contribution": shap_values
+                        }
                     )
 
-                    if len(features) == len(
-                        shap_values
-                    ):
+                    shap_dataframe[
+                        "Absolute"
+                    ] = shap_dataframe[
+                        "Contribution"
+                    ].abs()
 
-                        shap_df = pd.DataFrame(
-                            {
-                                "Feature":
-                                    features,
-
-                                "Contribution":
-                                    shap_values
-                            }
+                    shap_dataframe = (
+                        shap_dataframe
+                        .sort_values(
+                            "Absolute"
                         )
+                        .tail(10)
+                    )
 
-                        shap_df[
-                            "Absolute Contribution"
-                        ] = (
-                            shap_df[
+                    figure3 = go.Figure(
+                        go.Bar(
+                            x=shap_dataframe[
                                 "Contribution"
-                            ].abs()
+                            ],
+                            y=shap_dataframe[
+                                "Feature"
+                            ],
+                            orientation="h"
                         )
+                    )
 
-                        shap_df = (
-                            shap_df
-                            .sort_values(
-                                "Absolute Contribution"
-                            )
-                            .tail(10)
-                        )
+                    figure3.update_layout(
+                        height=450
+                    )
 
-                        fig3 = go.Figure()
+                    st.plotly_chart(
+                        figure3,
+                        use_container_width=True
+                    )
 
-                        fig3.add_trace(
-                            go.Bar(
-                                x=shap_df[
-                                    "Contribution"
-                                ],
+                    st.caption(
+                        """
+                        SHAP values describe model attribution.
+                        They should not be interpreted as proof
+                        of biological causation.
+                        """
+                    )
 
-                                y=shap_df[
-                                    "Feature"
-                                ],
-
-                                orientation="h"
-                            )
-                        )
-
-                        fig3.update_layout(
-                            height=420
-                        )
-
-                        st.plotly_chart(
-                            fig3,
-                            use_container_width=True
-                        )
-
-                        st.markdown(
-                            """
-                            <p class="section-note">
-                            SHAP values describe how environmental
-                            variables influence the model output.
-                            They represent model behaviour and should
-                            not be interpreted as proof of biological
-                            causation.
-                            </p>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-        # ----------------------------------------------------
-        # GRAD-CAM
-        # ----------------------------------------------------
-
-        with col_b:
+        with right:
 
             st.subheader(
                 "Visual Explanation"
             )
 
-            if (
+            overlay = compute_gradcam(
                 st.session_state.last_image
-                is None
-            ):
+            )
 
-                st.info(
-                    "No prediction image is available."
+            if overlay is not None:
+
+                st.image(
+                    overlay,
+                    use_container_width=True
+                )
+
+                st.caption(
+                    """
+                    Highlighted image regions represent areas
+                    emphasized by the image branch.
+                    """
                 )
 
             else:
 
-                with st.spinner(
-                    "Generating visual explanation..."
-                ):
-
-                    overlay = compute_gradcam(
-                        st.session_state.last_image,
-                        trait_idx
-                    )
-
-                if overlay is not None:
-
-                    st.image(
-                        overlay,
-                        use_container_width=True
-                    )
-
-                    st.markdown(
-                        """
-                        <p class="section-note">
-                        Highlighted regions indicate areas of
-                        stronger activation in the visual feature
-                        representation.
-                        </p>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                else:
-
-                    st.info(
-                        "Grad-CAM could not be generated "
-                        "for this model architecture."
-                    )
+                st.info(
+                    """
+                    Grad-CAM could not be generated for
+                    this model architecture.
+                    """
+                )
 
 
 # ============================================================
@@ -1827,97 +1397,66 @@ elif page == "Model Performance":
 
     if RESULTS_TABLE is None:
 
-        st.warning(
-            """
-            results_table.csv was not found.
-
-            Run the model evaluation section of your
-            training notebook and add the resulting file
-            to the repository.
-            """
+        st.info(
+            "results_table.csv is not available."
         )
 
     else:
 
-        if "Model" not in (
-            RESULTS_TABLE.columns
-        ):
+        multimodal = RESULTS_TABLE[
+            RESULTS_TABLE["Model"]
+            == "Multimodal CNN+MLP"
+        ]
 
-            st.error(
-                "results_table.csv must contain a Model column."
+        if multimodal.empty:
+
+            st.warning(
+                """
+                The results table does not contain
+                a Multimodal CNN+MLP model.
+                """
             )
 
         else:
 
-            multimodal_results = (
-                RESULTS_TABLE[
-                    RESULTS_TABLE["Model"]
-                    == "Multimodal CNN+MLP"
-                ]
-            )
-
             st.subheader(
-                "Multimodal Model — Metrics by Trait"
+                "Multimodal Model Metrics"
             )
 
-            columns_to_show = [
-                c
-
-                for c in [
+            available_columns = [
+                column
+                for column in [
                     "Trait",
                     "MAE",
                     "RMSE",
                     "R2"
                 ]
-
-                if c in
-                multimodal_results.columns
+                if column in multimodal.columns
             ]
 
             st.dataframe(
-                multimodal_results[
-                    columns_to_show
-                ].reset_index(
-                    drop=True
-                ),
+                multimodal[
+                    available_columns
+                ].reset_index(drop=True),
                 use_container_width=True
             )
 
-            if (
-                "Trait"
-                in multimodal_results.columns
+            if "R2" in multimodal.columns:
 
-                and
-
-                "R2"
-                in multimodal_results.columns
-            ):
-
-                st.subheader(
-                    "R-squared by Trait"
-                )
-
-                fig4 = go.Figure()
-
-                fig4.add_trace(
+                figure4 = go.Figure(
                     go.Bar(
-                        x=multimodal_results[
-                            "Trait"
-                        ],
-
-                        y=multimodal_results[
-                            "R2"
-                        ]
+                        x=multimodal["Trait"],
+                        y=multimodal["R2"]
                     )
                 )
 
-                fig4.update_layout(
+                figure4.update_layout(
                     yaxis_title="R²",
-                    height=380
+                    height=400
                 )
 
                 st.plotly_chart(
-                    fig4,
+                    figure4,
                     use_container_width=True
                 )
 
@@ -1934,123 +1473,94 @@ elif page == "Model Comparison":
 
     st.write(
         """
-        This section compares the multimodal model with
-        single-source approaches to determine whether
-        combining image and environmental information
-        improves prediction.
+        This page compares the multimodal model with
+        image-only, environmental-only and baseline models.
         """
     )
 
     if RESULTS_TABLE is None:
 
-        st.warning(
-            "results_table.csv was not found."
-        )
-
-    elif not all(
-        column in RESULTS_TABLE.columns
-
-        for column in [
-            "Model",
-            "MAE",
-            "RMSE",
-            "R2"
-        ]
-    ):
-
-        st.error(
-            """
-            results_table.csv is missing one or more
-            required columns: Model, MAE, RMSE, R2.
-            """
+        st.info(
+            "results_table.csv is not available."
         )
 
     else:
 
-        st.subheader(
-            "Overall Metrics by Model"
-        )
+        required_columns = {
+            "Model",
+            "MAE",
+            "RMSE",
+            "R2"
+        }
 
-        summary = (
-            RESULTS_TABLE
-            .groupby("Model")[
-                [
-                    "MAE",
-                    "RMSE",
-                    "R2"
-                ]
-            ]
-            .mean()
-            .reset_index()
-        )
-
-        st.dataframe(
-            summary,
-            use_container_width=True
-        )
-
-        if all(
-            column in RESULTS_TABLE.columns
-
-            for column in [
-                "Trait",
-                "R2"
-            ]
+        if not required_columns.issubset(
+            RESULTS_TABLE.columns
         ):
 
-            st.subheader(
-                "R-squared by Trait and Model"
+            st.error(
+                """
+                results_table.csv does not contain
+                the required columns.
+                """
             )
 
-            pivot = (
+        else:
+
+            summary = (
                 RESULTS_TABLE
-                .pivot_table(
+                .groupby("Model")[
+                    ["MAE", "RMSE", "R2"]
+                ]
+                .mean()
+                .reset_index()
+            )
+
+            st.subheader(
+                "Overall Metrics"
+            )
+
+            st.dataframe(
+                summary,
+                use_container_width=True
+            )
+
+            if {
+                "Trait",
+                "Model",
+                "R2"
+            }.issubset(
+                RESULTS_TABLE.columns
+            ):
+
+                pivot = RESULTS_TABLE.pivot_table(
                     index="Trait",
                     columns="Model",
                     values="R2"
                 )
-            )
 
-            fig6 = go.Figure()
+                figure5 = go.Figure()
 
-            for model_name in (
-                pivot.columns
-            ):
+                for model_name in pivot.columns:
 
-                fig6.add_trace(
-                    go.Bar(
-                        name=model_name,
-                        x=pivot.index,
-                        y=pivot[
-                            model_name
-                        ]
+                    figure5.add_trace(
+                        go.Bar(
+                            name=model_name,
+                            x=pivot.index,
+                            y=pivot[
+                                model_name
+                            ]
+                        )
                     )
+
+                figure5.update_layout(
+                    barmode="group",
+                    yaxis_title="R²",
+                    height=500
                 )
 
-            fig6.update_layout(
-                barmode="group",
-                height=450
-            )
-
-            st.plotly_chart(
-                fig6,
-                use_container_width=True
-            )
-
-            if not summary.empty:
-
-                best_model = (
-                    summary
-                    .sort_values(
-                        "R2",
-                        ascending=False
-                    )
-                    .iloc[0]["Model"]
-                )
-
-                st.success(
-                    "Best-performing model by "
-                    f"average R²: {best_model}"
+                st.plotly_chart(
+                    figure5,
+                    use_container_width=True
                 )
 
 
@@ -2064,20 +1574,16 @@ elif page == "Environmental Analysis":
         "Environmental Analysis"
     )
 
-    if (
-        st.session_state.last_env_row
-        is None
-    ):
+    if st.session_state.last_env_row is None:
 
         st.info(
-            "Make a prediction on the Predict page first."
+            "Make a prediction first."
         )
 
     else:
 
-        env_row = (
-            st.session_state
-            .last_env_row
+        environment_row = (
+            st.session_state.last_env_row
         )
 
         groups = {}
@@ -2088,104 +1594,80 @@ elif page == "Environmental Analysis":
                 column
             )
 
-            if group not in groups:
-
-                groups[group] = []
-
-            groups[group].append(
+            groups.setdefault(
+                group,
+                []
+            ).append(
                 column
             )
 
         st.subheader(
-            "Variable Groups"
+            "Environmental Variable Groups"
         )
 
         group_counts = pd.DataFrame(
             {
-                "Group":
-                    list(
-                        groups.keys()
-                    ),
-
-                "Number of variables":
-                    [
-                        len(values)
-
-                        for values
-                        in groups.values()
-                    ]
+                "Group": list(
+                    groups.keys()
+                ),
+                "Number of variables": [
+                    len(values)
+                    for values in groups.values()
+                ]
             }
         )
 
-        fig7 = go.Figure()
-
-        fig7.add_trace(
+        figure6 = go.Figure(
             go.Bar(
-                x=group_counts[
-                    "Group"
-                ],
-
+                x=group_counts["Group"],
                 y=group_counts[
                     "Number of variables"
                 ]
             )
         )
 
-        fig7.update_layout(
+        figure6.update_layout(
             height=350
         )
 
         st.plotly_chart(
-            fig7,
+            figure6,
             use_container_width=True
         )
 
-        st.subheader(
-            "Current Input Profile"
+        selected_group = st.selectbox(
+            "Select environmental group",
+            list(groups.keys())
         )
 
-        selected_group = (
-            st.selectbox(
-                "Select variable group",
-                list(
-                    groups.keys()
-                )
-            )
-        )
-
-        group_values = pd.DataFrame(
+        group_dataframe = pd.DataFrame(
             {
-                "Variable":
-                    groups[
+                "Variable": groups[
+                    selected_group
+                ],
+                "Value": [
+                    environment_row.get(
+                        column,
+                        np.nan
+                    )
+                    for column in groups[
                         selected_group
-                    ],
-
-                "Value":
-                    [
-                        env_row.get(
-                            column,
-                            np.nan
-                        )
-
-                        for column
-                        in groups[
-                            selected_group
-                        ]
                     ]
+                ]
             }
         )
 
         st.dataframe(
-            group_values,
+            group_dataframe,
             use_container_width=True,
-            height=350
+            height=400
         )
 
-        st.info(
+        st.caption(
             """
-            This panel displays the environmental
-            input profile. Group-level attribution requires
-            a separate attribution experiment.
+            This page displays the environmental input
+            profile. It does not calculate causal
+            group-level effects.
             """
         )
 
@@ -2202,10 +1684,9 @@ elif page == "Ablation Study":
 
     st.write(
         """
-        This section examines which information sources
-        are necessary for accurate prediction by
-        systematically removing them and observing
-        the effect on model performance.
+        The ablation study evaluates how prediction
+        performance changes when individual information
+        sources are removed.
         """
     )
 
@@ -2213,11 +1694,10 @@ elif page == "Ablation Study":
 
         st.info(
             """
-            ablation_results.csv was not found.
+            ablation_results.csv is not available.
 
-            Run the ablation experiment in the training
-            notebook and add the resulting file to the
-            repository.
+            Run the ablation experiments and add the
+            resulting CSV file to the repository.
             """
         )
 
@@ -2228,34 +1708,37 @@ elif page == "Ablation Study":
             use_container_width=True
         )
 
-        required_columns = [
+        if {
             "Configuration",
-            "R2",
-            "Trait"
-        ]
-
-        if all(
-            column in
+            "R2"
+        }.issubset(
             ABLATION_RESULTS.columns
-
-            for column
-            in required_columns
         ):
 
-            fig8 = px.bar(
-                ABLATION_RESULTS,
-                x="Configuration",
-                y="R2",
-                color="Trait",
-                barmode="group"
-            )
+            if "Trait" in ABLATION_RESULTS.columns:
 
-            fig8.update_layout(
-                height=450
+                figure7 = px.bar(
+                    ABLATION_RESULTS,
+                    x="Configuration",
+                    y="R2",
+                    color="Trait",
+                    barmode="group"
+                )
+
+            else:
+
+                figure7 = px.bar(
+                    ABLATION_RESULTS,
+                    x="Configuration",
+                    y="R2"
+                )
+
+            figure7.update_layout(
+                height=500
             )
 
             st.plotly_chart(
-                fig8,
+                figure7,
                 use_container_width=True
             )
 
@@ -2284,39 +1767,31 @@ elif page == "About the Research":
     )
 
     st.subheader(
-        "What the Model Predicts"
+        "Predicted Traits"
     )
 
-    st.write(
-        """
-        The model estimates six continuous plant
-        functional traits:
-        """
-    )
-
-    for trait in TARGET_NAMES.values():
+    for column in TARGET_COLS:
 
         st.write(
-            f"• {trait}"
+            f"• {TARGET_NAMES[column]}"
         )
 
     st.subheader(
-        "Architecture"
+        "Model Architecture"
     )
 
     st.write(
         """
-        Image branch: EfficientNetB0 pretrained on
-        ImageNet learns visual representations from
-        the plant photograph.
+        The image branch uses EfficientNetB0 to extract
+        visual features from plant photographs.
 
-        Environmental branch: a multilayer perceptron
-        learns nonlinear relationships between
-        environmental and geographic variables.
+        The environmental branch uses a multilayer
+        perceptron to process environmental and geographic
+        variables.
 
-        Fusion: the learned image and environmental
-        representations are combined before producing
-        the six predictions.
+        The outputs of both branches are fused and passed
+        through a prediction head that simultaneously
+        estimates six continuous plant functional traits.
         """
     )
 
@@ -2326,10 +1801,9 @@ elif page == "About the Research":
 
     st.write(
         """
-        Linear regression is used as a baseline.
-        An environmental-only MLP, an image-only CNN,
-        and the multimodal CNN+MLP are compared using
-        MAE, RMSE and R².
+        The research compares a linear regression baseline,
+        an environmental-only MLP, an image-only CNN, and
+        the multimodal CNN+MLP architecture.
         """
     )
 
@@ -2339,16 +1813,12 @@ elif page == "About the Research":
 
     st.write(
         """
-        SHAP is used to investigate the contribution
-        of environmental variables.
+        SHAP is used to investigate the contribution of
+        environmental variables, while Grad-CAM is used
+        to visualize influential regions of the plant image.
 
-        Grad-CAM is used to visualize regions of the
-        plant image associated with the visual feature
-        representation.
-
-        These techniques explain model behaviour and
-        should not be interpreted as proof of biological
-        causation.
+        These techniques describe model behavior and should
+        not be interpreted as evidence of biological causation.
         """
     )
 
@@ -2358,15 +1828,14 @@ elif page == "About the Research":
             "Model Information"
         )
 
-        info_df = pd.DataFrame(
+        information = pd.DataFrame(
             {
                 "Property": [
                     "Image resolution",
                     "Environmental variables",
-                    "Variables shown",
+                    "Selected variables",
                     "Predicted traits"
                 ],
-
                 "Value": [
                     f"{IMG_SIZE} × {IMG_SIZE}",
                     len(ENV_COLS),
@@ -2377,7 +1846,6 @@ elif page == "About the Research":
         )
 
         st.dataframe(
-            info_df,
+            information,
             use_container_width=True
         )
-```
